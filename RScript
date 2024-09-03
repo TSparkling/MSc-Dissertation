@@ -1,0 +1,530 @@
+library("readr")
+library("plyr")
+library(dplyr)
+library(readxl)
+library(data.table)
+library(ggplot2)
+library(randomForest)
+library(vcd)
+library("survival")
+library("survminer")
+library(lubridate)
+library(naniar)
+library(VIM)
+library(reshape2)
+
+# Set the path to the directory containing the files
+path1 <-"/Users/oluwatosinbritto/Desktop/brca_data1.csv"
+data1 <- read.csv(path1)
+
+View(data1)
+
+# Visualize missing data with percentages
+vis_miss(data1, show_perc = TRUE)
+
+# Select columns by index that are likely relevant to breast cancer survival
+selected_data1 <- data1[, c(2,4,28,53,62,64,72,97,98,114,116,139)]
+View(selected_data1)
+
+# Visualize missing data with percentages
+vis_miss(selected_data1, show_perc = TRUE)
+
+str(selected_data1)
+
+# Remove rows with NA in any of the specified columns
+cleaned_data <- selected_data1[complete.cases(selected_data1), ]
+
+# Display the cleaned data
+head(cleaned_data)
+View(cleaned_data)
+
+# Check categories in Race
+table(cleaned_data$Race.Category)
+
+# Check for duplicates in the Patient.ID column
+duplicate_patient_ids <- cleaned_data[duplicated(cleaned_data$Patient.ID), "Patient.ID"]
+
+# Display the duplicate Patient.IDs
+duplicate_patient_ids
+
+# Remove duplicate rows based on the Patient.ID column, keeping the first occurrence
+cleaned_data1 <- cleaned_data[!duplicated(cleaned_data$Patient.ID), ]
+
+# Display the cleaned data
+View(cleaned_data1)
+
+# Convert Race.Category to White, Black, and Other
+cleaned_data1$Race.Category <- dplyr::recode(cleaned_data1$Race.Category,
+                                             "WHITE" = "White",
+                                             "BLACK OR AFRICAN AMERICAN" = "Black",
+                                             "ASIAN" = "Other",
+                                             "AMERICAN INDIAN OR ALASKA NATIVE" = "Other",
+                                             "NATIVE HAWAIIAN OR OTHER PACIFIC ISLANDER" = "Other",
+                                             "OTHER" = "Other",
+                                             "UNKNOWN" = "Other")
+
+# Display the updated Race.Category column to check the conversion
+table(cleaned_data1$Race.Category)
+
+# Drop the Patient.ID column
+cleaned_data1 <- cleaned_data1[, !(names(cleaned_data1) %in% "Patient.ID")]
+
+# Display the first few rows of the updated dataframe
+head(cleaned_data1)
+
+# Create a new column 'Survival_Status' based on 'Overall.Survival.Status'
+cleaned_data1 <- cleaned_data1 %>%
+  mutate(Survival_Status = ifelse(grepl("0:LIVING", Overall.Survival.Status), "LIVING", "DECEASED"))
+
+# Check the first few rows to verify the new column
+head(cleaned_data1)
+
+str(cleaned_data1)
+
+# Load necessary libraries
+library(dplyr)
+
+# Function to get summary statistics and histograms by race category and survival status
+summarize_and_plot_by_status <- function(cleaned_data1, race_col, survival_col) {
+  # Get unique race categories
+  races <- unique(cleaned_data1[[race_col]])
+ 
+  # Get unique survival statuses
+  survival_statuses <- unique(cleaned_data1[[survival_col]])
+ 
+  # Loop through each race category
+  for (race in races) {
+    race_data <- cleaned_data1 %>% filter(.data[[race_col]] == race)
+   
+    # Loop through each survival status
+    for (status in survival_statuses) {
+      status_data <- race_data %>% filter(.data[[survival_col]] == status)
+     
+      # Set up plotting area with a single overarching title
+      par(mfrow = c(2, 3), oma = c(0, 0, 2, 0), mar = c(4, 4, 2, 1)) # Adjust layout and add space for the main title
+     
+      # Plot histograms for each numeric variable in this race category and survival status
+      for (col in colnames(status_data)) {
+        if (is.numeric(status_data[[col]])) {
+          hist(status_data[[col]], main = "", xlab = col, col = "lightblue", border = "black")
+        }
+      }
+     
+      # Add a single main title with the race type and survival status
+      title(paste("Distribution of Numeric Variables by", race, "Race - Status:", status), outer = TRUE)
+    }
+  }
+}
+
+# Call the function for your dataframe
+summarize_and_plot_by_status(cleaned_data1, race_col = "Race.Category", survival_col = "Survival_Status")
+
+
+# Get the five-number summary by race category and survival status
+get_five_number_summary_by_status <- function(cleaned_data1, race_col, survival_col) {
+  # Get unique race categories
+  races <- unique(cleaned_data1[[race_col]])
+  # Get unique survival statuses
+  survival_statuses <- unique(cleaned_data1[[survival_col]])
+ 
+  # Loop through each race category
+  for (race in races) {
+    cat("\nRace:", race, "\n")
+    race_data <- cleaned_data1 %>% filter(.data[[race_col]] == race)
+   
+    # Loop through each survival status
+    for (status in survival_statuses) {
+      cat("\nFive-number summary for", status, "status\n")
+      status_data <- race_data %>% filter(.data[[survival_col]] == status) %>% select_if(is.numeric)
+     
+      # Get the five-number summary for each numeric column
+      if (nrow(status_data) > 0) {
+        summary_stats <- summary(status_data)
+        print(summary_stats)
+      } else {
+        cat("No data available for this status.\n")
+      }
+    }
+  }
+}
+
+# Call the function for your dataframe
+get_five_number_summary_by_status(cleaned_data1, race_col = "Race.Category", survival_col = "Overall.Survival.Status")
+
+
+ggplot(cleaned_data1, aes(x = ER.Status.By.IHC, y = Mutation.Count)) +
+  geom_violin(trim = FALSE) +
+  theme_minimal() +
+  labs(title = "Violin Plot of Mutation Count by ER Status", x = "ER Status", y = "Mutation Count")
+
+# Convert Menopause.Status to numeric codes using case_when
+cleaned_data1 <- cleaned_data1 %>%
+  mutate(Menopause.Status = case_when(
+    Menopause.Status == "Post (prior bilateral ovariectomy OR >12 mo since LMP with no prior hysterectomy)" ~ 1,
+    Menopause.Status == "Pre (<6 months since LMP AND no prior bilateral ovariectomy AND not on estrogen replacement)" ~ 2,
+    Menopause.Status == "Indeterminate (neither Pre or Postmenopausal)" ~ 3,
+    Menopause.Status == "Peri (6-12 months since last menstrual period)" ~ 4,
+    TRUE ~ NA_real_  # Handle any unexpected values with NA
+  ))
+
+# Display the updated data to check the conversion
+View(cleaned_data1)
+
+df_clean_corr <- cleaned_data1
+
+# Convert categorical variables to factors and then to numeric
+df_clean_corr$ER.Status.By.IHC <- as.numeric(as.factor(df_clean_corr$ER.Status.By.IHC))
+df_clean_corr$IHC.HER2 <- as.numeric(as.factor(df_clean_corr$IHC.HER2))
+df_clean_corr$Overall.Survival.Status <- as.numeric(as.factor(df_clean_corr$Overall.Survival.Status))
+df_clean_corr$PR.status.by.ihc <- as.numeric(as.factor(df_clean_corr$PR.status.by.ihc))
+df_clean_corr$Race.Category <- as.numeric(as.factor(df_clean_corr$Race.Category))
+
+# View the transformed dataset
+str(df_clean_corr)
+
+# Exclude non-numeric columns before calculating the correlation matrix
+numeric_cols <- df_clean_corr %>% select_if(is.numeric)
+
+# Calculate the correlation matrix
+correlation_matrix <- cor(numeric_cols, use = "complete.obs")
+
+# Print the correlation matrix
+print(correlation_matrix)
+
+# Convert the correlation matrix into long format for ggplot
+melted_corr <- melt(correlation_matrix)
+
+# Create the heatmap with correlation coefficients displayed
+ggplot(data = melted_corr, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white",
+                       midpoint = 0, limit = c(-1, 1), space = "Lab",
+                       name="Correlation") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1,
+                                   size = 10, hjust = 1)) +
+  coord_fixed() +
+  geom_text(aes(label = round(value, 2)), color = "black", size = 3) +  # Display correlation values inside the tiles
+  labs(title = " ",
+       subtitle = "Correlation heatmap of the features",
+       x = "Features",
+       y = "Features") +
+  theme(plot.title = element_text(hjust = 0.5, size = 12),
+        plot.subtitle = element_text(hjust = 0.5, size = 12))
+
+
+# Stacked bar plot of Race by Survival Status
+ggplot(cleaned_data1, aes(x = Overall.Survival.Status, fill = Race.Category)) +
+  geom_bar(position = "stack") +
+  labs(
+    title = " ",
+    x = "Overall Survival Status",
+    y = "Number of Patients",
+    fill = "Race Category",
+    caption = "Stacked bar plot showing the distribution of survival outcome by race."
+  ) +
+  theme_minimal()
+
+#Bar Plot of Survival Status by Race
+ggplot(cleaned_data1, aes(x = Race.Category, fill = Overall.Survival.Status)) +
+  geom_bar(position = "fill") +
+  labs(
+    title = " ",
+    subtitle = " ",
+    x = "Racial Category",
+    y = "Proportion of Patients",
+    fill = "Survival Status",
+    caption = " Bar plot showing the distribution of survival status by race."
+  ) +
+  scale_fill_manual(values = c("0:LIVING" = "lightblue", "1:DECEASED" = "red")) +
+  theme_minimal()
+
+
+# Box Plot of Age Distribution by Race
+ggplot(cleaned_data1, aes(x = Race.Category, y = Diagnosis.Age, fill = Race.Category)) +
+  geom_boxplot() +
+  labs(
+    title = " ",
+    subtitle = "Box Plot Showing Diagnosis Age Distribution Among Different Racial Groups",
+    x = "Racial Category",
+    y = "Diagnosis Age (Years)",
+    fill = "Racial Category",
+    caption = " "
+  ) +
+  theme_minimal() +
+  facet_wrap(~ Race.Category, scales = "free")
+
+# Define unique races
+race_levels <- unique(cleaned_data1$Race.Category)
+
+# Define custom color palettes for each race and survival status
+custom_colors <- list(
+  "White" = c("0:LIVING" = "skyblue", "1:DECEASED" = "darkblue"),
+  "Black" = c("0:LIVING" = "lightgreen", "1:DECEASED" = "darkgreen"),
+  "Other" = c("0:LIVING" = "plum", "1:DECEASED" = "purple")
+)
+
+# Create a list for figure labels
+figure_labels <- list(
+  "White" ,
+  "Black",
+  "Other"
+)
+
+# Generate density plots for each race category
+for (race in race_levels) {
+  p <- ggplot(cleaned_data1 %>% filter(Race.Category == race),
+              aes(x = Diagnosis.Age, fill = Overall.Survival.Status, color = Overall.Survival.Status)) +
+    geom_density(alpha = 0.4) +
+    labs(
+      title = paste(" ", race),
+      subtitle = paste("Density Plot Comparing Diagnosis Age and Survival Status for", race, "Patients"),
+      x = "Diagnosis Age (Years)",
+      y = "Density",
+      fill = "Survival Status",
+      color = "Survival Status",
+      caption = figure_labels[[race]]
+    ) +
+    scale_fill_manual(values = custom_colors[[race]]) +
+    scale_color_manual(values = custom_colors[[race]]) +
+    guides(fill = guide_legend(override.aes = list(alpha = 0.4)),
+           color = guide_legend(override.aes = list(alpha = 0.4))) +
+    theme_minimal()
+ 
+  print(p)
+}
+
+
+# Box Plot of Overall Survival by PR Status
+ggplot(cleaned_data, aes(x = PR.status.by.ihc, y = Overall.Survival..Months., fill = PR.status.by.ihc)) +
+  geom_boxplot() +
+  labs(
+    title = "Comparison of Overall Survival in Months by PR Status",
+    subtitle = "Box Plot Showing the Distribution of Overall Survival Among PR Positive and Negative Patients",
+    y = "Overall Survival (Months)",
+    x = "PR Status",
+    fill = "PR Status",
+    caption = "Figure 4: This box plot illustrates the distribution of overall survival in months based on PR (Progesterone Receptor) status. The x-axis represents the PR status (Positive or Negative), while the y-axis shows the overall survival time in months. The plot highlights the median, interquartile range, and potential outliers, allowing for a comparison of survival outcomes between patients with different PR statuses."
+  ) +
+  theme_minimal()
+
+
+# Density Plot of Diagnosis Age by Survival Status
+ggplot(cleaned_data, aes(x = Diagnosis.Age, fill = Overall.Survival.Status, color = Overall.Survival.Status)) +
+  geom_density(alpha = 0.4) +
+  labs(
+    title = "Distribution of Diagnosis Age by Survival Status",
+    subtitle = "Density Plot Comparing Age Distribution between Living and Deceased Patients",
+    x = "Diagnosis Age (Years)",
+    y = "Density",
+    fill = "Survival Status",
+    color = "Survival Status",
+    caption = "Figure 5: This density plot compares the distribution of diagnosis age between patients who are living and those who are deceased. The x-axis represents the age at diagnosis, while the y-axis shows the density, reflecting the concentration of patients at different ages. The plot uses color to differentiate between the survival statuses, with 'Living' patients shown in light blue and 'Deceased' patients in red. This visualization provides insights into the age-related survival trends within the patient population."
+  ) +
+  scale_fill_manual(values = c("0:LIVING" = "lightblue", "1:DECEASED" = "red")) +
+  scale_color_manual(values = c("0:LIVING" = "lightblue", "1:DECEASED" = "red")) +
+  theme_minimal()
+
+
+# Convert Survival Status to a numeric binary variable for survival analysis
+cleaned_data1$Surv_Status <- ifelse(cleaned_data1$Overall.Survival.Status == "1:DECEASED", 1, 0)
+
+# Create a survival object
+surv_object <- Surv(time = cleaned_data1$Overall.Survival..Months., event = cleaned_data1$Surv_Status)
+
+# Kaplan-Meier fit by race category
+km_fit <- survfit(surv_object ~ Race.Category, data = cleaned_data1)
+
+
+# Convert Survival Status to a numeric binary variable for survival analysis
+cleaned_data1$Surv_Status <- ifelse(cleaned_data1$Overall.Survival.Status == "1:DECEASED", 1, 0)
+
+# Create a survival object
+surv_object <- Surv(time = cleaned_data1$Overall.Survival..Months., event = cleaned_data1$Surv_Status)
+
+# Fit the Kaplan-Meier model
+km_fit <- survfit(surv_object ~ Race.Category, data = cleaned_data1)
+
+# Plot the Kaplan-Meier survival curves with clear labeling
+ggsurvplot(km_fit, data = cleaned_data1,
+           pval = TRUE,  # Display p-value
+           conf.int = TRUE,  # Display confidence interval
+           risk.table = TRUE,  # Show risk table below the plot
+           risk.table.title = "Number at Risk by Race",
+           risk.table.height = 0.25,  # Adjust the height of the risk table
+           legend.title = "Race Category",  # Title for the legend
+           legend.labs = c("Black", "Other", "White"),  # Correct labels
+           title = "Kaplan-Meier Survival Curves by Race",
+           xlab = "Time (Months from Diagnosis)",  # Label for the x-axis
+           ylab = "Probability of Overall Survival",  # Label for the y-axis
+           palette = c("green", "orange", "blue"),  # Colors corresponding to Black, Other, White
+           ggtheme = theme_minimal(),  # Minimalist theme for a clean look
+           risk.table.y.text.col = TRUE,  # Color the risk table text by race category
+           risk.table.y.text = FALSE) +  # Hide y-axis text in the risk table
+  labs(caption = "Figure 3.6: Kaplan-Meier Survival Curves by Race .")
+
+# To focus only on race, generate survival curves by race
+surv_fit_race <- survfit(surv_object ~ Race.Category, data = cleaned_data1)
+
+# Plot survival curves by race
+ggsurvplot(surv_fit_race, data = cleaned_data1,
+           conf.int = TRUE,  # Show confidence intervals
+           ggtheme = theme_minimal(),  # Minimalist theme for clarity
+           title = "Survival Curves from Cox Model by Race",
+           xlab = "Time (Month from Diagnosis)",  # Clear x-axis label
+           ylab = "Probability of Overall Survival",  # Clear y-axis label
+           legend.title = "Race Category",  # Title for the legend
+           palette = c("blue", "green", "orange"))  # Custom color palette for race categories
+
+
+# Log Rank Test Fit survival curves by race category
+surv_fit_race <- survfit(surv_object ~ Race.Category, data = cleaned_data1)
+
+# Perform the Log-rank test to compare survival curves by race category
+log_rank_test <- survdiff(surv_object ~ Race.Category, data = cleaned_data1)
+
+# Display the result of the Log-rank test
+print(log_rank_test)
+
+
+# Subset data for each race category
+black_data <- subset(cleaned_data1, Race.Category == "Black")
+white_data <- subset(cleaned_data1, Race.Category == "White")
+other_data <- subset(cleaned_data1, Race.Category == "Other")
+
+
+# Create the survival object for Black race
+surv_object_black <- Surv(time = black_data$Overall.Survival..Months., event = black_data$Surv_Status)
+
+# Log-rank test for ER.Status.By.IHC within Black race category
+log_rank_test_black_er <- survdiff(surv_object_black ~ ER.Status.By.IHC, data = black_data)
+print(log_rank_test_black_er)
+
+# Log-rank test for Menopause.Status within Black race category
+log_rank_test_black_menopause <- survdiff(surv_object_black ~ Menopause.Status, data = black_data)
+print(log_rank_test_black_menopause)
+
+# Log-rank test for Mutation.Count within Black race category
+log_rank_test_black_Mutation <- survdiff(surv_object_black ~ Mutation.Count, data = black_data)
+print(log_rank_test_black_Mutation)
+
+# Log-rank test for PR.status.by.ihc within Black race category
+log_rank_test_black_pr <- survdiff(surv_object_black ~ PR.status.by.ihc, data = black_data)
+print(log_rank_test_black_pr)
+
+# Log-rank test for IHC.HER2 within Black race category
+log_rank_test_black_HER2 <- survdiff(surv_object_black ~ IHC.HER2, data = black_data)
+print(log_rank_test_black_HER2)
+
+# Log-rank test for Diagnosis.Agec within Black race category
+log_rank_test_black_age <- survdiff(surv_object_black ~ Diagnosis.Age, data = black_data)
+print(log_rank_test_black_age)
+
+
+# Create the survival object for White race
+surv_object_white <- Surv(time = white_data$Overall.Survival..Months., event = white_data$Surv_Status)
+
+# Log-rank test for ER.Status.By.IHC within White race category
+log_rank_test_white_er <- survdiff(surv_object_white ~ ER.Status.By.IHC, data = white_data)
+print(log_rank_test_white_er)
+
+# Log-rank test for Menopause.Status within White race category
+log_rank_test_white_menopause <- survdiff(surv_object_white ~ Menopause.Status, data = white_data)
+print(log_rank_test_white_menopause)
+
+# Log-rank test for IHC.HER2 within White race category
+log_rank_test_white_HER2 <- survdiff(surv_object_white ~ IHC.HER2, data = white_data)
+print(log_rank_test_white_HER2)
+
+# Log-rank test for PR.status.by.ihc within White race category
+log_rank_test_white_pr <- survdiff(surv_object_white ~ PR.status.by.ihc, data = white_data)
+print(log_rank_test_white_pr)
+
+# Log-rank test for Mutation.Count within White race category
+log_rank_test_white_Mutation <- survdiff(surv_object_white ~ Mutation.Count, data = white_data)
+print(log_rank_test_white_Mutation)
+
+# Log-rank test for Diagnosis.Age within White race category
+log_rank_test_white_age <- survdiff(surv_object_white ~ Diagnosis.Age, data = white_data)
+print(log_rank_test_white_age)
+
+
+# Create the survival object for Other race
+surv_object_other <- Surv(time = other_data$Overall.Survival..Months., event = other_data$Surv_Status)
+
+# Log-rank test for ER.Status.By.IHC within Other race category
+log_rank_test_other_er <- survdiff(surv_object_other ~ ER.Status.By.IHC, data = other_data)
+print(log_rank_test_other_er)
+
+# Log-rank test for Menopause.Status within Other race category
+log_rank_test_other_menopause <- survdiff(surv_object_other ~ Menopause.Status, data = other_data)
+print(log_rank_test_other_menopause)
+
+# Log-rank test for IHC.HER2 within Other race category
+log_rank_test_other_HER2 <- survdiff(surv_object_other ~ IHC.HER2, data = other_data)
+print(log_rank_test_other_HER2)
+
+# Log-rank test for PR.status.by.ihc within Other race category
+log_rank_test_other_pr <- survdiff(surv_object_other ~ PR.status.by.ihc, data = other_data)
+print(log_rank_test_other_pr)
+
+# Log-rank test for Mutation.Count within Other race category
+log_rank_test_other_Mutation <- survdiff(surv_object_other ~ Mutation.Count, data = other_data)
+print(log_rank_test_other_Mutation)
+
+# Log-rank test for Diagnosis.Age within Other race category
+log_rank_test_other_age <- survdiff(surv_object_other ~ Diagnosis.Age, data = other_data)
+print(log_rank_test_other_age)
+
+
+# Create the survival object
+surv_object <- Surv(time = cleaned_data1$Overall.Survival..Months., event = cleaned_data1$Surv_Status)
+
+# Fit the Cox proportional hazards model IHC.HER2 giving error
+cox_model <- coxph(surv_object ~ Race.Category + Diagnosis.Age + ER.Status.By.IHC +
+                     PR.status.by.ihc + Lymph.Node.s..Examined.Number +
+                     Mutation.Count + TMB..nonsynonymous.+ Menopause.Status,
+                   data = cleaned_data1)
+
+# Summary of the Cox model to view the results
+summary(cox_model)
+
+# Perform the test for the proportional hazards assumption
+cox_ph_test <- cox.zph(cox_model)
+
+# Print the results
+print(cox_ph_test)
+
+# Plot the Schoenfeld residuals to visually assess the proportional hazards assumption
+plot(cox_ph_test)
+
+
+surv_fit_black_er <- survfit(surv_object_black ~ ER.Status.By.IHC, data = black_data)
+ggsurvplot(surv_fit_black_er, data = black_data,
+           conf.int = TRUE,
+           ggtheme = theme_minimal(),
+           title = "Survival Curves by ER Status (Black)",
+           xlab = "Time (Months from Diagnosis)",
+           ylab = "Probability of Overall Survival",
+           legend.title = "ER Status",
+           palette = c("red", "blue"))
+
+surv_fit_white_er <- survfit(surv_object_white ~ ER.Status.By.IHC, data = white_data)
+ggsurvplot(surv_fit_white_er, data = white_data,
+           conf.int = TRUE,
+           ggtheme = theme_minimal(),
+           title = "Survival Curves by ER Status (White)",
+           xlab = "Time (Months from Diagnosis)",
+           ylab = "Probability of Overall Survival",
+           legend.title = "ER Status",
+           palette = c("red", "blue"))
+
+surv_fit_other_er <- survfit(surv_object_other ~ ER.Status.By.IHC, data = other_data)
+ggsurvplot(surv_fit_other_er, data = other_data,
+           conf.int = TRUE,
+           ggtheme = theme_minimal(),
+           title = "Survival Curves by ER Status (Other)",
+           xlab = "Time (Days from Diagnosis)",
+           ylab = "Probability of Overall Survival",
+           legend.title = "ER Status",
+           palette = c("red", "blue"))

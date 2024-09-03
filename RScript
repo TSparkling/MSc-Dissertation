@@ -81,9 +81,6 @@ head(cleaned_data1)
 
 str(cleaned_data1)
 
-# Load necessary libraries
-library(dplyr)
-
 # Function to get summary statistics and histograms by race category and survival status
 summarize_and_plot_by_status <- function(cleaned_data1, race_col, survival_col) {
   # Get unique race categories

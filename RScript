@@ -81,32 +81,64 @@ head(cleaned_data1)
 
 str(cleaned_data1)
 
+# Create a table of counts for each category in the 'Race.Category' column
+race_counts <- table(cleaned_data1$Race.Category)
+
+# Calculate the percentage of each category
+race_percentages <- prop.table(race_counts) * 100
+
+# Convert to a data frame for easier viewing
+race_percentages_df <- as.data.frame(race_percentages)
+
+# Rename the columns for clarity
+colnames(race_percentages_df) <- c("Race.Category", "Percentage")
+
+# Display the result
+print(race_percentages_df)
+
+# Create a table for race categories by survival status
+race_survival_table <- table(cleaned_data1$Race.Category, cleaned_data1$Survival_Status)
+
+# Calculate the proportions of each race within survival status
+race_survival_prop <- prop.table(race_survival_table, margin = 2) * 100
+
+# View the proportions
+print(race_survival_prop)
+
+# Perform Fisher's Exact Test
+fisher_test <- fisher.test(race_survival_table)
+
+# Print the results
+print(fisher_test)
+
+
+
 # Function to get summary statistics and histograms by race category and survival status
 summarize_and_plot_by_status <- function(cleaned_data1, race_col, survival_col) {
   # Get unique race categories
   races <- unique(cleaned_data1[[race_col]])
- 
+  
   # Get unique survival statuses
   survival_statuses <- unique(cleaned_data1[[survival_col]])
- 
+  
   # Loop through each race category
   for (race in races) {
     race_data <- cleaned_data1 %>% filter(.data[[race_col]] == race)
-   
+    
     # Loop through each survival status
     for (status in survival_statuses) {
       status_data <- race_data %>% filter(.data[[survival_col]] == status)
-     
+      
       # Set up plotting area with a single overarching title
       par(mfrow = c(2, 3), oma = c(0, 0, 2, 0), mar = c(4, 4, 2, 1)) # Adjust layout and add space for the main title
-     
+      
       # Plot histograms for each numeric variable in this race category and survival status
       for (col in colnames(status_data)) {
         if (is.numeric(status_data[[col]])) {
           hist(status_data[[col]], main = "", xlab = col, col = "lightblue", border = "black")
         }
       }
-     
+      
       # Add a single main title with the race type and survival status
       title(paste("Distribution of Numeric Variables by", race, "Race - Status:", status), outer = TRUE)
     }
@@ -123,17 +155,17 @@ get_five_number_summary_by_status <- function(cleaned_data1, race_col, survival_
   races <- unique(cleaned_data1[[race_col]])
   # Get unique survival statuses
   survival_statuses <- unique(cleaned_data1[[survival_col]])
- 
+  
   # Loop through each race category
   for (race in races) {
     cat("\nRace:", race, "\n")
     race_data <- cleaned_data1 %>% filter(.data[[race_col]] == race)
-   
+    
     # Loop through each survival status
     for (status in survival_statuses) {
       cat("\nFive-number summary for", status, "status\n")
       status_data <- race_data %>% filter(.data[[survival_col]] == status) %>% select_if(is.numeric)
-     
+      
       # Get the five-number summary for each numeric column
       if (nrow(status_data) > 0) {
         summary_stats <- summary(status_data)
@@ -194,11 +226,11 @@ melted_corr <- melt(correlation_matrix)
 # Create the heatmap with correlation coefficients displayed
 ggplot(data = melted_corr, aes(x = Var1, y = Var2, fill = value)) +
   geom_tile(color = "white") +
-  scale_fill_gradient2(low = "blue", high = "red", mid = "white",
-                       midpoint = 0, limit = c(-1, 1), space = "Lab",
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1, 1), space = "Lab", 
                        name="Correlation") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, vjust = 1,
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
                                    size = 10, hjust = 1)) +
   coord_fixed() +
   geom_text(aes(label = round(value, 2)), color = "black", size = 3) +  # Display correlation values inside the tiles
@@ -270,7 +302,7 @@ figure_labels <- list(
 
 # Generate density plots for each race category
 for (race in race_levels) {
-  p <- ggplot(cleaned_data1 %>% filter(Race.Category == race),
+  p <- ggplot(cleaned_data1 %>% filter(Race.Category == race), 
               aes(x = Diagnosis.Age, fill = Overall.Survival.Status, color = Overall.Survival.Status)) +
     geom_density(alpha = 0.4) +
     labs(
@@ -287,7 +319,7 @@ for (race in race_levels) {
     guides(fill = guide_legend(override.aes = list(alpha = 0.4)),
            color = guide_legend(override.aes = list(alpha = 0.4))) +
     theme_minimal()
- 
+  
   print(p)
 }
 
@@ -343,7 +375,7 @@ surv_object <- Surv(time = cleaned_data1$Overall.Survival..Months., event = clea
 km_fit <- survfit(surv_object ~ Race.Category, data = cleaned_data1)
 
 # Plot the Kaplan-Meier survival curves with clear labeling
-ggsurvplot(km_fit, data = cleaned_data1,
+ggsurvplot(km_fit, data = cleaned_data1, 
            pval = TRUE,  # Display p-value
            conf.int = TRUE,  # Display confidence interval
            risk.table = TRUE,  # Show risk table below the plot
@@ -364,7 +396,7 @@ ggsurvplot(km_fit, data = cleaned_data1,
 surv_fit_race <- survfit(surv_object ~ Race.Category, data = cleaned_data1)
 
 # Plot survival curves by race
-ggsurvplot(surv_fit_race, data = cleaned_data1,
+ggsurvplot(surv_fit_race, data = cleaned_data1, 
            conf.int = TRUE,  # Show confidence intervals
            ggtheme = theme_minimal(),  # Minimalist theme for clarity
            title = "Survival Curves from Cox Model by Race",
@@ -478,9 +510,9 @@ print(log_rank_test_other_age)
 surv_object <- Surv(time = cleaned_data1$Overall.Survival..Months., event = cleaned_data1$Surv_Status)
 
 # Fit the Cox proportional hazards model IHC.HER2 giving error
-cox_model <- coxph(surv_object ~ Race.Category + Diagnosis.Age + ER.Status.By.IHC +
-                     PR.status.by.ihc + Lymph.Node.s..Examined.Number +
-                     Mutation.Count + TMB..nonsynonymous.+ Menopause.Status,
+cox_model <- coxph(surv_object ~ Race.Category + Diagnosis.Age + ER.Status.By.IHC + 
+                     PR.status.by.ihc + Lymph.Node.s..Examined.Number + 
+                     Mutation.Count + TMB..nonsynonymous.+ Menopause.Status, 
                    data = cleaned_data1)
 
 # Summary of the Cox model to view the results
@@ -497,8 +529,8 @@ plot(cox_ph_test)
 
 
 surv_fit_black_er <- survfit(surv_object_black ~ ER.Status.By.IHC, data = black_data)
-ggsurvplot(surv_fit_black_er, data = black_data,
-           conf.int = TRUE,
+ggsurvplot(surv_fit_black_er, data = black_data, 
+           conf.int = TRUE, 
            ggtheme = theme_minimal(),
            title = "Survival Curves by ER Status (Black)",
            xlab = "Time (Months from Diagnosis)",
@@ -507,8 +539,8 @@ ggsurvplot(surv_fit_black_er, data = black_data,
            palette = c("red", "blue"))
 
 surv_fit_white_er <- survfit(surv_object_white ~ ER.Status.By.IHC, data = white_data)
-ggsurvplot(surv_fit_white_er, data = white_data,
-           conf.int = TRUE,
+ggsurvplot(surv_fit_white_er, data = white_data, 
+           conf.int = TRUE, 
            ggtheme = theme_minimal(),
            title = "Survival Curves by ER Status (White)",
            xlab = "Time (Months from Diagnosis)",
@@ -517,8 +549,8 @@ ggsurvplot(surv_fit_white_er, data = white_data,
            palette = c("red", "blue"))
 
 surv_fit_other_er <- survfit(surv_object_other ~ ER.Status.By.IHC, data = other_data)
-ggsurvplot(surv_fit_other_er, data = other_data,
-           conf.int = TRUE,
+ggsurvplot(surv_fit_other_er, data = other_data, 
+           conf.int = TRUE, 
            ggtheme = theme_minimal(),
            title = "Survival Curves by ER Status (Other)",
            xlab = "Time (Days from Diagnosis)",
